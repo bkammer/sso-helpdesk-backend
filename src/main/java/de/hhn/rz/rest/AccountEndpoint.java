@@ -27,6 +27,8 @@ import de.hhn.rz.services.AuditLogService;
 import de.hhn.rz.services.KeycloakService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.lang.Nullable;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -73,8 +75,12 @@ public class AccountEndpoint extends AbstractService {
         }
 
         auditLogService.audit(AuditAction.SEARCH, "first=" + first, "max=" + max, "q=" + q);
-        return service.findAccounts(first, max, q.trim());
+        List<Account> accounts = service.findAccounts(first, max, q.trim());
 
+        final Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        String att = ((OidcUser) principal).getAttribute("fakultaet");
+
+        return accounts.stream().filter(account -> account.attribute().equals(att)).toList();
     }
 
     @PostMapping("reset")

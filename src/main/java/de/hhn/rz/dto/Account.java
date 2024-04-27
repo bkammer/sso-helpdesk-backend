@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.Optional;
 
 public record Account(String keycloakId, String id, String username, String firstName, String lastName, String email,
-                      String type) {
+                      String type, String attribute) {
 
     public Account(UserRepresentation ua) {
         this(ua.getId(),
@@ -30,6 +30,7 @@ public record Account(String keycloakId, String id, String username, String firs
                 ua.getFirstName(),
                 ua.getLastName(),
                 ua.getEmail(),
-                Optional.ofNullable(ua.getAttributes()).map(o -> o.get("type")).orElse(List.of("N/A")).get(0));
+                Optional.ofNullable(ua.getAttributes()).map(o -> o.get("type")).orElse(List.of("N/A")).get(0),
+                Optional.ofNullable(ua.getAttributes()).map(o -> o.get("fakultaet")).orElse(List.of("N/A")).get(0));
     }
 }
