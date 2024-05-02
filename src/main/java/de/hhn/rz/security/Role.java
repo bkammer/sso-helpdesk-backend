@@ -20,7 +20,10 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 public enum Role {
 
-    HHN_HELPDESK_ADMIN("HHN_HELPDESK_ADMIN");
+    HHN_HELPDESK_ADMIN("HHN_HELPDESK_ADMIN"),
+    HHN_HELPDESK_IT("HHN_HELPDESK_IT"),
+    HHN_HELPDESK_IB("HHN_HELPDESK_IB"),
+    HHN_HELPDESK_VW("HHN_HELPDESK_VW");
 
     private final String role;
 
