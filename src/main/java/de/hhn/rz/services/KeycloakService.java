@@ -18,8 +18,9 @@ package de.hhn.rz.services;
 import de.hhn.rz.AbstractService;
 import de.hhn.rz.db.entities.AuditAction;
 import de.hhn.rz.dto.Account;
+import de.hhn.rz.exception.GroupNotIdentifiableException;
+import de.hhn.rz.exception.PermissionNotFoundException;
 import de.hhn.rz.security.Role;
-import jakarta.ws.rs.ForbiddenException;
 import org.keycloak.admin.client.resource.RealmResource;
 import org.keycloak.admin.client.resource.UserResource;
 import org.keycloak.representations.idm.CredentialRepresentation;
@@ -29,9 +30,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.stereotype.Service;
 
+import javax.naming.NoPermissionException;
 import java.util.*;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
@@ -56,31 +57,21 @@ public class KeycloakService extends AbstractService {
     }
 
     public List<Account> findAccounts(Integer first, Integer max, String searchParameter) {
-        // TODO: Add audit log
         final Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
         List<Account> allAccounts = List.of();
         //user did successfully authenticate with Keycloak, let's check for required helpdesk role.
         if (authentication != null) {
             Collection<? extends GrantedAuthority> authorities = authentication.getAuthorities();
+
             if (authorities != null) {
-                final GrantedAuthority gaIt = Role.HHN_HELPDESK_IT.asGrantedAuthority();
-                final GrantedAuthority gaIb = Role.HHN_HELPDESK_IB.asGrantedAuthority();
-                final GrantedAuthority gaVW = Role.HHN_HELPDESK_VW.asGrantedAuthority();
-                if (authorities.contains(gaIt)) {
-                    //logger.info("Authority IT");
-                    allAccounts = Stream.concat(allAccounts.stream(), findAccountsSearchWithGroup(first, max, searchParameter, "FAKULTAET_IT").stream()).toList();
-                    //logger.info(allAccounts.toString());
-                }
-                if (authorities.contains(gaIb)) {
-                    //logger.info("Authority IB");
-                    allAccounts = Stream.concat(allAccounts.stream(), findAccountsSearchWithGroup(first, max, searchParameter, "FAKULTAET_IB").stream()).toList();
-                    //logger.info(allAccounts.toString());
-                }
-                if (authorities.contains(gaVW)) {
-                    //logger.info("Authority VW");
-                    allAccounts = Stream.concat(allAccounts.stream(), findAccountsSearchWithGroup(first, max, searchParameter, "FAKULTAET_VW").stream()).toList();
-                    //logger.info(allAccounts.toString());
+                for (Role role : Role.values()) {
+                    if (authorities.contains(role.asGrantedAuthority())) {
+                        for (String groupAuth : role.groupAuthorizations()) {
+                            List<Account> accounts = searchAccountsWithGroup(first, max, searchParameter, groupAuth);
+                            allAccounts = Stream.concat(allAccounts.stream(), accounts.stream()).toList();
+                        }
+                    }
                 }
 
                 // Error if no GrantedAuthority matches
@@ -88,10 +79,7 @@ public class KeycloakService extends AbstractService {
         }
 
         return allAccounts;
-
-
-
-
+        
 //        if (isEmployeeId(searchParameter)) {
 //            return client.users().searchByAttributes("employeeID:" + searchParameter).stream().map(Account::new).toList();
 //        }
@@ -99,93 +87,49 @@ public class KeycloakService extends AbstractService {
     }
 
     public void resetCredentials(String keycloakId, String seq) {
-        //logger.info("resetCredentials called");
-        // TODO: Implement access control for resetCredentials
         checkParameter(keycloakId);
         checkParameter(seq);
 
-        final UserResource u = client.users().get(keycloakId);
+        final Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null) {
+            Collection<? extends GrantedAuthority> ga = authentication.getAuthorities();
+            if (ga != null) {
+                final UserResource u = getUserResource(keycloakId, seq);
+                Collection<String> userGroups = u.groups().stream().map(GroupRepresentation::getName).collect(Collectors.toList());
+                for (Role r : Role.values()) {
+                    if (ga.contains(r.asGrantedAuthority())) {
+                        if (userGroups.stream().anyMatch(r.groupAuthorizations()::contains)) {
+                            resetUserCredentials(seq, u);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+        // other exception
+        throw new PermissionNotFoundException();
+    }
+
+    private UserResource getUserResource(String keycloakId, String seq) {
+        UserResource u = client.users().get(keycloakId);
         if (u == null) {
             throw new IllegalArgumentException("No user found. ID='" + keycloakId + "' is invalid?!");
         }
         auditLogService.audit(AuditAction.RESET_CREDENTIALS, "user=" + u.toRepresentation().getUsername(), "keycloak-id=" + keycloakId, "seq=" + seq);
-
-        // Get group of HS-user
-        Collection<String> userGroups = u.groups().stream().map(GroupRepresentation::getName).collect(Collectors.toList());
-
-        final Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-
-        List<Account> allAccounts = List.of();
-        //user did successfully authenticate with Keycloak, let's check for required helpdesk role.
-        if (authentication != null) {
-            Collection<? extends GrantedAuthority> authorities = authentication.getAuthorities();
-            if (authorities != null) {
-                // create granted authorities
-                final GrantedAuthority gaIt = Role.HHN_HELPDESK_IT.asGrantedAuthority();
-                final GrantedAuthority gaIb = Role.HHN_HELPDESK_IB.asGrantedAuthority();
-                final GrantedAuthority gaVW = Role.HHN_HELPDESK_VW.asGrantedAuthority();
-                // check which authority the user has
-
-                // Berechtigungscheck bevor der credentialservice aufgerufen wird.
-                
-                if (authorities.contains(gaIt)) {
-                    logger.info("Authority IT");
-                    // reset credentials
-                    if (userGroups.contains("FAKULTAET_IT")){
-                        logger.info("User Group IT");
-                        // Remove 2FA and any other non password thingy
-                        for (CredentialRepresentation cr : u.credentials()) {
-                            if (!CredentialRepresentation.PASSWORD.equals(cr.getType())) {
-                                u.removeCredential(cr.getId());
-                            }
-                        }
-
-                        // Reset the password for the given user
-                        u.resetPassword(credentialService.getCredentials(seq));
-                        return;
-                    }
-                }
-                if (authorities.contains(gaIb)) {
-                    logger.info("Authority IB");
-                    // reset credentials
-                    if (userGroups.contains("FAKULTAET_IB")){
-                        logger.info("User Group IT");
-                        // Remove 2FA and any other non password thingy
-                        for (CredentialRepresentation cr : u.credentials()) {
-                            if (!CredentialRepresentation.PASSWORD.equals(cr.getType())) {
-                                u.removeCredential(cr.getId());
-                            }
-                        }
-
-                        // Reset the password for the given user
-                        u.resetPassword(credentialService.getCredentials(seq));
-                        return;
-                    }
-                }
-                if (authorities.contains(gaVW)) {
-                    logger.info("Authority VW");
-                    // reset credentials
-                    if (userGroups.contains("FAKULTAET_VW")){
-                        logger.info("User Group IT");
-                        // Remove 2FA and any other non password thingy
-                        for (CredentialRepresentation cr : u.credentials()) {
-                            if (!CredentialRepresentation.PASSWORD.equals(cr.getType())) {
-                                u.removeCredential(cr.getId());
-                            }
-                        }
-
-                        // Reset the password for the given user
-                        u.resetPassword(credentialService.getCredentials(seq));
-                        return;
-                    }
-                }
-                // Throw other exception
-                throw new IllegalArgumentException("No user found. ID='" + keycloakId + "' is invalid?!");
-                // Error if no GrantedAuthority matches
-            }
-        }
+        return u;
     }
 
+    private void resetUserCredentials(String seq, UserResource u) {
+        // Remove 2FA and any other non password thingy
+        for (CredentialRepresentation cr : u.credentials()) {
+            if (!CredentialRepresentation.PASSWORD.equals(cr.getType())) {
+                u.removeCredential(cr.getId());
+            }
+        }
+
+        // Reset the password for the given user
+        u.resetPassword(credentialService.getCredentials(seq));
+    }
 
     private boolean isEmployeeId(String id) {
         if (id == null) {
@@ -194,29 +138,17 @@ public class KeycloakService extends AbstractService {
         return PATTERN_EMPLOYEE_ID.matcher(id).find();
     }
 
-    private List<Account> findAccountsSearchWithGroup (Integer first, Integer max, String searchParameter, String group) {
+    private List<Account> searchAccountsWithGroup(Integer first, Integer max, String searchParameter, String group) {
+        List<GroupRepresentation> groupRepresentations = client.groups().groups(group.toString(), true, 0, 2, false);
 
-        List<UserRepresentation> groupMembers = List.of();
-        // Check max parameter if it could be reduced from 1000 to maybe 1
-        List<GroupRepresentation> groupRepresentations = client.groups().groups(group.toString(), true, 0, 1000, false);
-        //logger.info("Group: " + groupRepresentations);
-
-        if (groupRepresentations.size() == 1) {
-            List list = groupRepresentations.stream().map(GroupRepresentation::getId).collect(Collectors.toList());
-            // Bessere Implementierung > kein collect mit Collectors.toList()?
-            String groupId = list.get(0).toString();
-            groupMembers = client.groups().group(groupId).members();
-        } else {
-            // throw Exception?
+        if (groupRepresentations.size() != 1) {
+            throw new GroupNotIdentifiableException();
         }
 
-        //logger.info("Group members: " + groupMembers);
-
+        String groupId = groupRepresentations.get(0).getId();
+        List<UserRepresentation> groupMembers = client.groups().group(groupId).members();
         List<Account> groupAccounts = groupMembers.stream().map(Account::new).toList();
 
-        //logger.info("Group accounts: " + groupAccounts);
-
-        // Get all users that mach a given string
         List<Account> searchedAccounts;
         if (isEmployeeId(searchParameter)) {
             searchedAccounts = client.users().searchByAttributes("employeeID:" + searchParameter).stream().map(Account::new).toList();
@@ -224,10 +156,6 @@ public class KeycloakService extends AbstractService {
             searchedAccounts = client.users().search(searchParameter, first, max).stream().map(Account::new).toList();
         }
 
-        //logger.info("Searched accounts: " + searchedAccounts);
-
-        List<Account> resultAccount = searchedAccounts.stream().filter(searchAcc -> groupAccounts.contains(searchAcc)).collect(Collectors.toList());
-        //logger.info("ResultAccounts: " + resultAccount);
-        return resultAccount;
+        return searchedAccounts.stream().filter(searchAcc -> groupAccounts.contains(searchAcc)).collect(Collectors.toList());
     }
 }
