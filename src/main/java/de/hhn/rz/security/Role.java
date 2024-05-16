@@ -18,18 +18,29 @@ package de.hhn.rz.security;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
+import java.util.List;
+
 public enum Role {
 
-    HHN_HELPDESK_ADMIN("HHN_HELPDESK_ADMIN");
+    HHN_HELPDESK_ADMIN("HHN_HELPDESK_ADMIN", List.of()),
+    HHN_HELPDESK_IT("HHN_HELPDESK_IT", List.of("FAKULTAET_IT")),
+    HHN_HELPDESK_IB("HHN_HELPDESK_IB", List.of("FAKULTAET_IB")),
+    HHN_HELPDESK_VW("HHN_HELPDESK_VW", List.of("FAKULTAET_VW"));
 
     private final String role;
+    private final List<String> authorities;
 
-    Role(String role) {
+    Role(String role, List<String> groupAuthorizations) {
         this.role = role;
+        this.authorities = groupAuthorizations;
     }
 
     public GrantedAuthority asGrantedAuthority() {
         return new SimpleGrantedAuthority(withPrefix());
+    }
+
+    public List<String> groupAuthorizations() {
+        return authorities;
     }
 
     public String withPrefix() {

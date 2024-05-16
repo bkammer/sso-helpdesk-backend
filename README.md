@@ -26,9 +26,13 @@ docker run --name keycloak-local -p 8888:8080 -e KEYCLOAK_ADMIN=admin -e KEYCLOA
    - Email: `example_user1@test.de`, `...`
    - Email verified: `True`
    - First and Last name: `User1 Example`, `...`
+2. Create the following groups
+   - `FAKULTAET_IB`, `FAKULTAET_IT`, `FAKULTAET_VW`, `...`
+3. Select one group at a time and add users each group by selecting the group and pressing "Add members" in the members tab.
 
 #### Realm Configuration: `helpdesk`
-1. Create a new realm role `HHN_HELPDESK_ADMIN`
+1. Create the following new realm roles
+   - `HHN_HELPDESK_ADMIN`, `HHN_HELPDESK_IB`, `HHN_HELPDESK_IT`, `HHN_HELPDESK_VW`, `...`
 2. Create new OpenID Connect client for the helpdesk realm
    - Client ID: `helpdesk_user`
    - Name: `Helpdesk User Client`
@@ -42,7 +46,11 @@ docker run --name keycloak-local -p 8888:8080 -e KEYCLOAK_ADMIN=admin -e KEYCLOA
    - Add to ID token: `False`
    - Add to access token: `False`
    - Add to userinfo: `True`
-5. Create user `example_admin`, assign the role `HHN_HELPDESK_ADMIN` in the Role mapping tab (after the creation), and set the password to `example_admin` by pressing "Set password" in the credentials tab (disable "Temporary password")
+5. Create the following users
+   - Username: `example_admin_ib`, `example_admin_it`, `...`
+   - Assign the role `HHN_HELPDESK_ADMIN` in the Role mapping tab (after the creation)
+   - Additionally, assign another role that specifies which group in the institution realm the user should have access to. For example, the role `HHN_HELPDESK_IB` has access to the group `FAKULTAET_IB`; `HHN_HELPDESK_IT` to `FAKULTAET_IT`, `...`
+   - Set a password by pressing "Set password" in the credentials tab (disable "Temporary password")
 
 #### Realm Configuration: `master`
 
