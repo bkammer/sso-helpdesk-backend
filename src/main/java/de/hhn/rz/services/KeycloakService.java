@@ -32,9 +32,8 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
-import javax.naming.NoPermissionException;
-import java.util.*;
-import java.util.logging.Logger;
+import java.util.Collection;
+import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -42,7 +41,6 @@ import java.util.stream.Stream;
 @Service
 public class KeycloakService extends AbstractService {
 
-    private final static Logger logger = Logger.getLogger(KeycloakService.class.getName());
     private static final Pattern PATTERN_EMPLOYEE_ID = Pattern.compile("^[MmPp][0-9]*$");
     private final RealmResource client;
     private final CredentialService credentialService;
@@ -73,17 +71,9 @@ public class KeycloakService extends AbstractService {
                         }
                     }
                 }
-
-                // Error if no GrantedAuthority matches
             }
         }
-
         return allAccounts;
-        
-//        if (isEmployeeId(searchParameter)) {
-//            return client.users().searchByAttributes("employeeID:" + searchParameter).stream().map(Account::new).toList();
-//        }
-//        return client.users().search(searchParameter, first, max).stream().map(Account::new).toList();
     }
 
     public void resetCredentials(String keycloakId, String seq) {
